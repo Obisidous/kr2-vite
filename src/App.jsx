@@ -1,12 +1,3 @@
-import { useState, useMemo, useCallback, useRef } from "react";
-import * as Papa from "papaparse";
-import * as XLSX from "xlsx";
-
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import * as Papa from "papaparse";
-import * as XLSX from "xlsx";
-import { ChevronRight, ChevronDown, BarChart3, Target, Users, Clock, Package, Calendar, Flame, ClipboardList, Table2, Edit3, RefreshCw, Home, Menu, X, Save, Trash2, Upload, Download, Eye, EyeOff, Settings } from "lucide-react";
-
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import * as Papa from "papaparse";
 import * as XLSX from "xlsx";
