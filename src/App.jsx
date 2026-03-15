@@ -7,6 +7,11 @@ import * as Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { ChevronRight, ChevronDown, BarChart3, Target, Users, Clock, Package, Calendar, Flame, ClipboardList, Table2, Edit3, RefreshCw, Home, Menu, X, Save, Trash2, Upload, Download, Eye, EyeOff, Settings } from "lucide-react";
 
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import * as Papa from "papaparse";
+import * as XLSX from "xlsx";
+import { ChevronRight, ChevronDown, BarChart3, Target, Users, Clock, Package, Calendar, Flame, ClipboardList, Table2, Edit3, RefreshCw, Home, Menu, X, Save, Trash2, Upload, Download, Eye, EyeOff, Settings } from "lucide-react";
+
 const YEAR = 2026;
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const C = { bg:"#0f0f1a", bg2:"#161625", bg3:"#1c1c30", bg4:"#222238", border:"#2a2a3e", border2:"#353550", text:"#e8e8f0", text2:"#8888aa", text3:"#6b6b8a", blue:"#3b82f6", purple:"#8b5cf6", green:"#10b981", yellow:"#f59e0b", pink:"#ec4899", red:"#ef4444", white:"#fff", orange:"#f97316", dark:"#0a0a14", rowAlt:"#1a1a30", sidebar:"#111120", sideHover:"#1a1a35", sideActive:"#1e2a4a" };
@@ -466,7 +471,7 @@ export default function App(){
       {/* Logo area */}
       <div style={{padding:sideOpen?"16px 16px 12px":"16px 12px 12px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>setSideOpen(!sideOpen)}>
         <div style={{width:32,height:32,borderRadius:8,background:`linear-gradient(135deg,${C.blue},${C.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>📦</div>
-        {sideOpen&&<div><div style={{color:C.text,fontSize:13,fontWeight:800,lineHeight:1.1}}>KR2 Ops Hub</div><div style={{color:C.text3,fontSize:9}}>by Jason Watts</div></div>}
+        {sideOpen&&<div><div style={{color:C.text,fontSize:13,fontWeight:800,lineHeight:1.1}}>3PL Ops Hub</div><div style={{color:C.text3,fontSize:9}}>{YEAR}</div></div>}
       </div>
 
       {/* Nav sections */}
