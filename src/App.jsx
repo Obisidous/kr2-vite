@@ -213,43 +213,108 @@ export default function App(){
   // VIEWS
   // ═══════════════════════════════════════════════════════
   const renderHome=()=>{const ov=masterStats._overall;const hasOrders=orders.length>0;
-    return(<div>
+    const topPicker=stats.pickers.length?stats.pickers[0]:null;const topClient=stats.clients.length?stats.clients[0]:null;
+    return(<div style={{display:"flex",flexDirection:"column",minHeight:"calc(100vh - 62px)"}}>
       <SectionHeader icon={Home} title={`3PL Operations Hub — ${YEAR}`} sub="Your warehouse at a glance"/>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12,marginBottom:16}}>
-        {/* KR2 Quick Status */}
-        <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:12,padding:20,cursor:"pointer"}} onClick={()=>hasOrders&&setTab("dashboard")}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><BarChart3 size={18} color={C.blue}/><span style={{color:C.text,fontWeight:700,fontSize:14}}>KR2 Dashboard</span></div>
-          {hasOrders?<><div style={{color:pctColor(kr2pct),fontSize:32,fontWeight:800}}>{kr2pct.toFixed(1)}%</div>
-            <div style={{background:C.bg,borderRadius:6,height:8,marginTop:8,overflow:"hidden"}}><div style={{background:pctColor(kr2pct),height:"100%",width:`${Math.max(kr2pct,1)}%`,borderRadius:6}}/></div>
-            <div style={{color:C.text3,fontSize:11,marginTop:6}}>{kr2Filtered.length} orders · {stats.pickers.length} pickers · {fileName}</div></>
-          :<><div style={{color:C.text3,fontSize:13,marginTop:8}}>No data loaded yet</div><Btn small bg={C.purple} onClick={(e)=>{e.stopPropagation();fileRef.current?.click();}} icon={Upload}>Import CSV</Btn></>}
+
+      {/* Top row — two big cards */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+        {/* KR2 Dashboard card */}
+        <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:12,padding:24,cursor:"pointer",transition:"border-color 0.15s"}}
+          onClick={()=>hasOrders&&setTab("dashboard")} onMouseOver={e=>e.currentTarget.style.borderColor=C.blue} onMouseOut={e=>e.currentTarget.style.borderColor=C.border}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}><BarChart3 size={20} color={C.blue}/><span style={{color:C.text,fontWeight:700,fontSize:15}}>KR2 Dashboard</span>
+            <ChevronRight size={16} color={C.text3} style={{marginLeft:"auto"}}/></div>
+          {hasOrders?<>
+            <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:10}}>
+              <div style={{color:pctColor(kr2pct),fontSize:42,fontWeight:800,lineHeight:1}}>{kr2pct.toFixed(1)}%</div>
+              <div style={{color:C.text3,fontSize:12}}>KR2 Completion</div></div>
+            <div style={{background:C.bg,borderRadius:6,height:10,overflow:"hidden",marginBottom:14}}><div style={{background:pctColor(kr2pct),height:"100%",width:`${Math.max(kr2pct,1)}%`,borderRadius:6}}/></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              <div style={{background:C.bg2,borderRadius:8,padding:"10px 12px"}}><div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Orders</div><div style={{color:C.blue,fontSize:20,fontWeight:800}}>{kr2Filtered.length}</div></div>
+              <div style={{background:C.bg2,borderRadius:8,padding:"10px 12px"}}><div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Closed</div><div style={{color:C.green,fontSize:20,fontWeight:800}}>{stats.closed}</div></div>
+              <div style={{background:C.bg2,borderRadius:8,padding:"10px 12px"}}><div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Missed</div><div style={{color:stats.missed?C.red:C.green,fontSize:20,fontWeight:800}}>{stats.missed}</div></div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8}}>
+              <div style={{background:C.bg2,borderRadius:8,padding:"10px 12px"}}><div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Avg KR2 Time</div><div style={{color:C.yellow,fontSize:18,fontWeight:800}}>{fmtHours(stats.kr2_avg_time)}</div></div>
+              <div style={{background:C.bg2,borderRadius:8,padding:"10px 12px"}}><div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Pickers</div><div style={{color:C.purple,fontSize:18,fontWeight:800}}>{stats.pickers.length}</div></div>
+            </div>
+            <div style={{color:C.text3,fontSize:10,marginTop:10}}>{fileName}</div>
+          </>:<div style={{padding:"20px 0"}}><div style={{color:C.text3,fontSize:14,marginBottom:14}}>No data loaded yet</div>
+            <Btn bg={C.purple} onClick={(e)=>{e.stopPropagation();fileRef.current?.click();}} icon={Upload}>Import Order CSV</Btn></div>}
         </div>
 
-        {/* Master Quick Status */}
-        <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:12,padding:20,cursor:"pointer"}} onClick={()=>setTab("master_overview")}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><ClipboardList size={18} color={C.green}/><span style={{color:C.text,fontWeight:700,fontSize:14}}>KR2 Master Compliance</span></div>
-          <div style={{color:pctColor(ov.pct),fontSize:32,fontWeight:800}}>{ov.pct.toFixed(1)}%</div>
-          <div style={{background:C.bg,borderRadius:6,height:8,marginTop:8,overflow:"hidden"}}><div style={{background:pctColor(ov.pct),height:"100%",width:`${Math.max(ov.pct,1)}%`,borderRadius:6}}/></div>
-          <div style={{color:C.text3,fontSize:11,marginTop:6}}>{ov.done} done · {ov.nd} not done · {CATEGORIES.length} categories</div>
-        </div>
-
-        {/* CNZ Quick */}
-        <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:12,padding:20,cursor:"pointer"}} onClick={()=>setTab("cnz_mapper")}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><RefreshCw size={18} color={C.orange}/><span style={{color:C.text,fontWeight:700,fontSize:14}}>CNZ Import Mapper</span></div>
-          <div style={{color:C.orange,fontSize:24,fontWeight:800}}>{Object.keys(cnzProfiles).length} saved profiles</div>
-          <div style={{color:C.text3,fontSize:11,marginTop:6}}>Map client files to CNZ Import Template</div>
-          {cnzSrc&&<div style={{color:C.text2,fontSize:11,marginTop:4}}>Last: {cnzFile} ({cnzSrc.length} rows)</div>}
+        {/* Master Compliance card */}
+        <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:12,padding:24,cursor:"pointer",transition:"border-color 0.15s"}}
+          onClick={()=>setTab("master_overview")} onMouseOver={e=>e.currentTarget.style.borderColor=C.green} onMouseOut={e=>e.currentTarget.style.borderColor=C.border}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}><ClipboardList size={20} color={C.green}/><span style={{color:C.text,fontWeight:700,fontSize:15}}>KR2 Master Compliance</span>
+            <ChevronRight size={16} color={C.text3} style={{marginLeft:"auto"}}/></div>
+          <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:10}}>
+            <div style={{color:pctColor(ov.pct),fontSize:42,fontWeight:800,lineHeight:1}}>{ov.pct.toFixed(1)}%</div>
+            <div style={{color:C.text3,fontSize:12}}>Annual Compliance</div></div>
+          <div style={{background:C.bg,borderRadius:6,height:10,overflow:"hidden",marginBottom:14}}><div style={{background:pctColor(ov.pct),height:"100%",width:`${Math.max(ov.pct,1)}%`,borderRadius:6}}/></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
+            <div style={{background:C.bg2,borderRadius:8,padding:"10px 12px"}}><div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Done</div><div style={{color:C.green,fontSize:20,fontWeight:800}}>{ov.done}</div></div>
+            <div style={{background:C.bg2,borderRadius:8,padding:"10px 12px"}}><div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Not Done</div><div style={{color:ov.nd?C.red:C.green,fontSize:20,fontWeight:800}}>{ov.nd}</div></div>
+            <div style={{background:C.bg2,borderRadius:8,padding:"10px 12px"}}><div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Categories</div><div style={{color:C.blue,fontSize:20,fontWeight:800}}>{CATEGORIES.length}</div></div>
+          </div>
+          {/* Mini category status */}
+          <div style={{display:"flex",flexWrap:"wrap",gap:3,marginTop:4}}>
+            {CATEGORIES.slice(0,8).map(cat=>{const cs=masterStats[cat.id];return(
+              <div key={cat.id} style={{background:C.bg2,borderRadius:6,padding:"4px 8px",display:"flex",alignItems:"center",gap:4}}>
+                <div style={{width:8,height:8,borderRadius:2,background:pctColor(cs.pct)}}/><span style={{color:C.text3,fontSize:9}}>{cat.name.replace("Daily ","").replace("Weekly ","").slice(0,12)}</span>
+              </div>);})}
+            {CATEGORIES.length>8&&<div style={{background:C.bg2,borderRadius:6,padding:"4px 8px"}}><span style={{color:C.text3,fontSize:9}}>+{CATEGORIES.length-8} more</span></div>}
+          </div>
         </div>
       </div>
 
-      {/* Quick actions */}
-      <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:12,padding:20}}>
-        <div style={{color:C.text,fontWeight:700,fontSize:14,marginBottom:12}}>Quick Actions</div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <Btn bg={C.purple} onClick={()=>fileRef.current?.click()} icon={Upload}>Import Order CSV</Btn>
-          <Btn bg={C.green} onClick={()=>setTab("master_overview")} icon={ClipboardList}>Compliance Tracker</Btn>
-          <Btn bg={C.orange} onClick={()=>setTab("cnz_mapper")} icon={RefreshCw}>CNZ Mapper</Btn>
-          {hasOrders&&<Btn bg={C.blue} onClick={()=>setTab("team")} icon={Users}>View Team</Btn>}
+      {/* Bottom row */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,flex:1}}>
+        {/* CNZ Mapper card */}
+        <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:12,padding:24,cursor:"pointer",transition:"border-color 0.15s"}}
+          onClick={()=>setTab("cnz_mapper")} onMouseOver={e=>e.currentTarget.style.borderColor=C.orange} onMouseOut={e=>e.currentTarget.style.borderColor=C.border}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}><RefreshCw size={20} color={C.orange}/><span style={{color:C.text,fontWeight:700,fontSize:15}}>CNZ Import Mapper</span>
+            <ChevronRight size={16} color={C.text3} style={{marginLeft:"auto"}}/></div>
+          <div style={{color:C.orange,fontSize:36,fontWeight:800,lineHeight:1}}>{Object.keys(cnzProfiles).length}</div>
+          <div style={{color:C.text3,fontSize:12,marginTop:4,marginBottom:14}}>saved client profiles</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div style={{background:C.bg2,borderRadius:8,padding:"10px 12px"}}><div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Template</div><div style={{color:C.text,fontSize:13,fontWeight:700}}>CNZ Import</div><div style={{color:C.text3,fontSize:10}}>26 columns (A–Z)</div></div>
+            <div style={{background:C.bg2,borderRadius:8,padding:"10px 12px"}}><div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Auto-Map</div><div style={{color:C.text,fontSize:13,fontWeight:700}}>Smart Match</div><div style={{color:C.text3,fontSize:10}}>Keyword + fuzzy</div></div>
+          </div>
+          {cnzSrc&&<div style={{background:C.bg2,borderRadius:8,padding:"10px 12px",marginTop:8}}><div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Last File</div><div style={{color:C.text2,fontSize:12,marginTop:2}}>{cnzFile} ({cnzSrc.length} rows)</div></div>}
+          {Object.keys(cnzProfiles).length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:10}}>
+            {Object.keys(cnzProfiles).map(n=>(<div key={n} style={{background:C.bg2,borderRadius:6,padding:"3px 8px"}}><span style={{color:C.orange,fontSize:10,fontWeight:600}}>{n}</span></div>))}</div>}
+        </div>
+
+        {/* Quick Actions + Stats */}
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:12,padding:24}}>
+            <div style={{color:C.text,fontWeight:700,fontSize:15,marginBottom:14}}>Quick Actions</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <Btn bg={C.purple} onClick={()=>fileRef.current?.click()} icon={Upload}>Import Order CSV</Btn>
+              <Btn bg={C.green} onClick={()=>setTab("master_overview")} icon={ClipboardList}>Compliance</Btn>
+              <Btn bg={C.orange} onClick={()=>setTab("cnz_mapper")} icon={RefreshCw}>CNZ Mapper</Btn>
+              {hasOrders&&<Btn bg={C.blue} onClick={()=>setTab("team")} icon={Users}>View Team</Btn>}
+            </div>
+          </div>
+
+          {hasOrders&&<div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:12,padding:24,flex:1}}>
+            <div style={{color:C.text,fontWeight:700,fontSize:15,marginBottom:14}}>Top Performers</div>
+            {topPicker&&<div style={{background:C.bg2,borderRadius:8,padding:"12px 14px",marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Top Picker</div>
+                <div style={{color:C.text,fontSize:16,fontWeight:800,marginTop:2}}>{topPicker.name}</div></div>
+                <div style={{textAlign:"right"}}><div style={{color:pctColor(topPicker.kr2),fontSize:18,fontWeight:800}}>{topPicker.kr2.toFixed(1)}%</div><div style={{color:C.text3,fontSize:10}}>{topPicker.orders} orders</div></div></div></div>}
+            {topClient&&<div style={{background:C.bg2,borderRadius:8,padding:"12px 14px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Top Client</div>
+                <div style={{color:C.text,fontSize:16,fontWeight:800,marginTop:2}}>{topClient.name}</div></div>
+                <div style={{textAlign:"right"}}><div style={{color:C.purple,fontSize:18,fontWeight:800}}>{topClient.orders}</div><div style={{color:C.text3,fontSize:10}}>orders</div></div></div></div>}
+          </div>}
+
+          {!hasOrders&&<div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:12,padding:24,flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+            <Upload size={32} color={C.text3} style={{opacity:0.3,marginBottom:10}}/>
+            <div style={{color:C.text3,fontSize:13}}>Import a CSV to see team stats</div>
+            <div style={{color:C.text3,fontSize:11,marginTop:4}}>Extensiv order exports supported</div>
+          </div>}
         </div>
       </div>
     </div>);};
