@@ -1,8 +1,5 @@
 import { useState, useMemo, useCallback, useRef } from "react";
 import * as Papa from "papaparse";
-
-import { useState, useMemo, useCallback, useRef } from "react";
-import * as Papa from "papaparse";
 import * as XLSX from "xlsx";
 
 const YEAR = 2026;
@@ -268,7 +265,7 @@ export default function App(){
   // ── Tabs ──
   const kpiTabs=[{id:"dashboard",icon:"📊",label:"Dashboard"},{id:"kr2detail",icon:"🎯",label:"KR2 Detail"},{id:"team",icon:"👥",label:"Team"},{id:"picktime",icon:"⏱",label:"Times"},{id:"clients",icon:"📦",label:"Clients"},{id:"daily",icon:"📅",label:"Daily"},{id:"velocity",icon:"🔥",label:"Fast Movers"}];
   const masterTabs=[{id:"master_overview",icon:"📋",label:"KR2 Master"},{id:"master_table",icon:"📊",label:"Score Table"},{id:"master_detail",icon:"✏️",label:"Edit Grid"}];
-  const toolTabs=[{id:"cnz_mapper",icon:"🔄",label:"Inwards Mapper"}];
+  const toolTabs=[{id:"cnz_mapper",icon:"🔄",label:"CNZ Mapper"}];
   const isKpi=!tab.startsWith("master_")&&tab!=="cnz_mapper";
   const showFilters=isKpi&&!["dashboard","kr2detail"].includes(tab)&&orders.length>0;
 
@@ -292,7 +289,7 @@ export default function App(){
     <div style={{display:"flex",gap:12,marginTop:24}}>
       <Btn bg={C.purple} onClick={()=>fileRef.current?.click()}>📁 Import Order CSV</Btn>
       <Btn bg={C.green} onClick={()=>setTab("master_overview")}>📋 Open KR2 Master</Btn>
-      <Btn bg={C.orange} onClick={()=>setTab("cnz_mapper")}>🔄 Inwards Mapper</Btn>
+      <Btn bg={C.orange} onClick={()=>setTab("cnz_mapper")}>🔄 CNZ Mapper</Btn>
     </div>
   </div>);
 
