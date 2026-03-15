@@ -189,6 +189,22 @@ export default function App(){
   const toggleMC=(cid,mi,k)=>{setMasterData(p=>{const n=JSON.parse(JSON.stringify(p));n[cid][mi][k]=(+(n[cid]?.[mi]?.[k]??0)+1)%5;return n;});};
   const bulkSet=(cid,mi,st,ct)=>{setMasterData(p=>{const n=JSON.parse(JSON.stringify(p));if(ct==="daily"){for(let d=1;d<=daysInMonth(mi);d++)if(!isWeekend(mi,d))n[cid][mi][d]=st;}else{for(let w=1;w<=5;w++)n[cid][mi][w]=st;}return n;});};
 
+  // ── Responsive detection ──
+  const [winW,setWinW]=useState(typeof window!=="undefined"?window.innerWidth:1920);
+  const [winH,setWinH]=useState(typeof window!=="undefined"?window.innerHeight:1080);
+  useEffect(()=>{const h=()=>{setWinW(window.innerWidth);setWinH(window.innerHeight);};window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h);},[]);
+
+  const isCompact=winW<1024;
+  const isWide=winW>=1920;
+  const isUltrawide=winW>=2400;
+  const contentPad=isUltrawide?32:isWide?24:isCompact?12:20;
+  const sideW=isCompact?0:sideOpen?(isUltrawide?260:220):56;
+  const maxContent=isUltrawide?1800:isWide?1500:9999;
+  const scaleFactor=isUltrawide?1.15:isWide?1.05:1;
+
+  // Auto-collapse sidebar on small screens
+  useEffect(()=>{if(isCompact&&sideOpen)setSideOpen(false);},[isCompact]);
+
   // ── SIDEBAR NAV ──
   const navSections=[
     {title:"Home",items:[{id:"home",label:"Overview",icon:Home}]},
@@ -218,7 +234,7 @@ export default function App(){
       <SectionHeader icon={Home} title={`3PL Operations Hub — ${YEAR}`} sub="Your warehouse at a glance"/>
 
       {/* Top row — two big cards */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+      <div style={{display:"grid",gridTemplateColumns:isCompact?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
         {/* KR2 Dashboard card */}
         <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:12,padding:24,cursor:"pointer",transition:"border-color 0.15s"}}
           onClick={()=>hasOrders&&setTab("dashboard")} onMouseOver={e=>e.currentTarget.style.borderColor=C.blue} onMouseOut={e=>e.currentTarget.style.borderColor=C.border}>
@@ -269,7 +285,7 @@ export default function App(){
       </div>
 
       {/* Bottom row */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,flex:1}}>
+      <div style={{display:"grid",gridTemplateColumns:isCompact?"1fr":"1fr 1fr",gap:12,flex:1}}>
         {/* CNZ Mapper card */}
         <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:12,padding:24,cursor:"pointer",transition:"border-color 0.15s"}}
           onClick={()=>setTab("cnz_mapper")} onMouseOver={e=>e.currentTarget.style.borderColor=C.orange} onMouseOut={e=>e.currentTarget.style.borderColor=C.border}>
@@ -319,14 +335,17 @@ export default function App(){
       </div>
     </div>);};
 
+  const gridCols=isCompact?"1fr":isUltrawide?"1fr 1fr 1fr":"1fr 1fr";
+  const cardGap=isUltrawide?12:isWide?10:8;
+
   const renderDashboard=()=>(<div><SectionHeader icon={BarChart3} title="KR2 Dashboard" sub="Order completion tracking"/><KR2Window/>
-    <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}><Gauge pct={stats.kr2_pct} closed={stats.closed} total={stats.total}/>
+    <div style={{display:"flex",gap:cardGap,marginBottom:cardGap+4,flexWrap:"wrap"}}><Gauge pct={stats.kr2_pct} closed={stats.closed} total={stats.total}/>
       <Card title="Orders" value={stats.total.toLocaleString()} sub={`${stats.avgOrdersDay}/day · ${stats.days} days`} color={C.blue} icon="📋"/>
       <Card title="Closed" value={stats.closed.toLocaleString()} sub={`${stats.closed}/${stats.total}`} color={C.green} icon="✅"/>
       <Card title="Missed" value={stats.missed.toLocaleString()} sub={stats.missed?"not closed":"none!"} color={stats.missed?C.red:C.green} icon={stats.missed?"⚠️":"✅"}/>
       <Card title="Avg KR2 Time" value={fmtHours(stats.kr2_avg_time)} sub={`median ${fmtHours(stats.kr2_median_time)}`} color={C.yellow} icon="⏱"/>
       <Card title="Total Picks" value={stats.picks.toLocaleString()} sub={`${stats.pickers.length} pickers`} color={C.purple} icon="🎯"/></div>
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+    <div style={{display:"grid",gridTemplateColumns:gridCols,gap:cardGap}}>
       <BarChart data={stats.pickers.map(p=>({label:p.name,value:Math.round(p.kr2*10)/10,color:pctColor(p.kr2),suffix:"%"}))} color={C.green} title="🎯 KR2 % by Picker"/>
       <BarChart data={stats.pickers.filter(p=>p.avgTime).map(p=>({label:p.name,value:Math.round(p.avgTime/60*10)/10,suffix:"h"}))} color={C.yellow} title="⏱ Avg KR2 Time (hours)"/>
       <BarChart data={stats.pickers.map(p=>({label:p.name,value:p.orders}))} color={C.blue} title="📋 Orders by Picker"/>
@@ -389,7 +408,7 @@ export default function App(){
     return <div><SectionHeader icon={Table2} title="Score Table"/><DataTable columns={cols} rows={rows}/></div>;};
 
   const renderMasterDetail=()=>{if(!masterCat)return(<div><SectionHeader icon={Edit3} title="Edit Grid" sub="Select a category"/>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>{CATEGORIES.map(cat=>{const cs=masterStats[cat.id];return(
+    <div style={{display:"grid",gridTemplateColumns:isCompact?"1fr 1fr":`repeat(3,1fr)`,gap:8}}>{CATEGORIES.map(cat=>{const cs=masterStats[cat.id];return(
       <div key={cat.id} onClick={()=>setMasterCat(cat.id)} style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:10,padding:"14px 16px",cursor:"pointer",transition:"border-color 0.15s"}}
         onMouseOver={e=>e.currentTarget.style.borderColor=C.blue} onMouseOut={e=>e.currentTarget.style.borderColor=C.border}>
         <div style={{color:C.text,fontWeight:700,fontSize:12}}>{cat.name}</div><div style={{color:pctColor(cs.pct),fontWeight:700,fontSize:12,marginTop:4}}>{cs.pct.toFixed(1)}%</div>
@@ -429,7 +448,7 @@ export default function App(){
       <SectionHeader icon={RefreshCw} title="CNZ Import Mapper" sub="Map client files to CNZ Import Template"/>
 
       {/* File + Profiles */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+      <div style={{display:"grid",gridTemplateColumns:isCompact?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
         <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px"}}>
           <div style={{color:C.text2,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Source File</div>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -519,58 +538,61 @@ export default function App(){
   // ═══════════════════════════════════════════════════════
   // LAYOUT
   // ═══════════════════════════════════════════════════════
-  return(<div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif",display:"flex"}}>
+  return(<div style={{background:C.bg,minHeight:"100vh",color:C.text,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif",display:"flex",fontSize:Math.round(14*scaleFactor)}}>
     <input ref={fileRef} type="file" accept=".csv" onChange={handleCSV} style={{display:"none"}}/>
 
+    {/* Mobile overlay */}
+    {isCompact&&sideOpen&&<div onClick={()=>setSideOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:90}}/>}
+
     {/* Sidebar */}
-    <div style={{width:sideOpen?220:56,background:C.sidebar,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",transition:"width 0.2s",flexShrink:0,overflow:"hidden"}}>
-      {/* Logo area */}
-      <div style={{padding:sideOpen?"16px 16px 12px":"16px 12px 12px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>setSideOpen(!sideOpen)}>
-        <div style={{width:32,height:32,borderRadius:8,background:`linear-gradient(135deg,${C.blue},${C.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>📦</div>
-        {sideOpen&&<div><div style={{color:C.text,fontSize:13,fontWeight:800,lineHeight:1.1}}>3PL Ops Hub</div><div style={{color:C.text3,fontSize:9}}>{YEAR}</div></div>}
+    <div style={{width:sideW,background:C.sidebar,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",transition:"width 0.2s,transform 0.2s",flexShrink:0,overflow:"hidden",
+      ...(isCompact?{position:"fixed",left:0,top:0,bottom:0,width:240,zIndex:100,transform:sideOpen?"translateX(0)":"translateX(-100%)"}:{})}}>
+      {/* Logo */}
+      <div style={{padding:(sideOpen||isCompact)?"16px 16px 12px":"16px 12px 12px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>setSideOpen(!sideOpen)}>
+        <div style={{width:34,height:34,borderRadius:8,background:`linear-gradient(135deg,${C.blue},${C.purple})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>📦</div>
+        {(sideOpen||isCompact)&&<div><div style={{color:C.text,fontSize:14,fontWeight:800,lineHeight:1.1}}>3PL Ops Hub</div><div style={{color:C.text3,fontSize:10}}>{YEAR}</div></div>}
       </div>
 
-      {/* Nav sections */}
+      {/* Nav */}
       <div style={{flex:1,overflowY:"auto",padding:"8px 0"}}>
         {navSections.map((sec,si)=>(<div key={si} style={{marginBottom:4}}>
-          {sideOpen&&<div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,padding:"8px 16px 4px"}}>{sec.title}</div>}
+          {(sideOpen||isCompact)&&<div style={{color:C.text3,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:1.5,padding:"8px 16px 4px"}}>{sec.title}</div>}
           {sec.items.map(item=>{const active=tab===item.id;const Icon=item.icon;
-            return(<div key={item.id} onClick={()=>{setTab(item.id);if(window.innerWidth<768)setSideOpen(false);}}
-              style={{display:"flex",alignItems:"center",gap:10,padding:sideOpen?"8px 16px":"8px 0",margin:"1px 8px",borderRadius:8,
-                background:active?C.sideActive:"transparent",cursor:"pointer",transition:"all 0.15s",justifyContent:sideOpen?"flex-start":"center"}}
+            return(<div key={item.id} onClick={()=>{setTab(item.id);if(isCompact)setSideOpen(false);}}
+              style={{display:"flex",alignItems:"center",gap:10,padding:(sideOpen||isCompact)?"8px 16px":"8px 0",margin:"1px 8px",borderRadius:8,
+                background:active?C.sideActive:"transparent",cursor:"pointer",transition:"all 0.15s",justifyContent:(sideOpen||isCompact)?"flex-start":"center"}}
               onMouseOver={e=>{if(!active)e.currentTarget.style.background=C.sideHover;}} onMouseOut={e=>{if(!active)e.currentTarget.style.background="transparent";}}>
               <Icon size={18} color={active?C.blue:C.text3} style={{flexShrink:0}}/>
-              {sideOpen&&<span style={{color:active?C.text:C.text2,fontSize:12,fontWeight:active?700:500}}>{item.label}</span>}
+              {(sideOpen||isCompact)&&<span style={{color:active?C.text:C.text2,fontSize:12,fontWeight:active?700:500}}>{item.label}</span>}
             </div>);
           })}</div>))}
       </div>
 
-      {/* Sidebar footer */}
-      {sideOpen&&<div style={{borderTop:`1px solid ${C.border}`,padding:12}}>
-        <div style={{color:C.text3,fontSize:9,textAlign:"center"}}>KR2 Complete v2.0</div>
+      {(sideOpen||isCompact)&&<div style={{borderTop:`1px solid ${C.border}`,padding:12}}>
+        <div style={{color:C.text3,fontSize:9,textAlign:"center"}}>{winW}×{winH} · KR2 v2.0</div>
       </div>}
     </div>
 
-    {/* Main content */}
+    {/* Main */}
     <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
       {/* Top bar */}
-      <div style={{background:C.bg2,borderBottom:`1px solid ${C.border}`,padding:"10px 20px",display:"flex",alignItems:"center",gap:12}}>
+      <div style={{background:C.bg2,borderBottom:`1px solid ${C.border}`,padding:`10px ${contentPad}px`,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
         <button onClick={()=>setSideOpen(!sideOpen)} style={{background:"none",border:"none",color:C.text2,cursor:"pointer",padding:4}}>
-          {sideOpen?<X size={18}/>:<Menu size={18}/>}
+          {sideOpen&&!isCompact?<X size={18}/>:<Menu size={18}/>}
         </button>
 
         {fileName&&<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:6,height:6,borderRadius:3,background:C.green}}/><span style={{color:C.text2,fontSize:11}}>{orders.length} orders · KR2: {kr2pct.toFixed(1)}% · {fileName}</span></div>}
 
-        <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}>
+        <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
           {showFilters&&<>{[["Date",dateF,setDateF,["all","today","week","month"]],["Picker",pickerF,setPickerF,["all",...pickers]],["Client",clientF,setClientF,["all",...clientsList]]].map(([l,v,s,o])=>(
-            <div key={l} style={{display:"flex",alignItems:"center",gap:4}}><span style={{color:C.text3,fontSize:10}}>{l}</span><Sel value={v} onChange={s} options={o} width={130}/></div>))}</>}
-          <Btn small bg={C.purple} onClick={()=>fileRef.current?.click()} icon={Upload}>Import</Btn>
+            <div key={l} style={{display:"flex",alignItems:"center",gap:4}}><span style={{color:C.text3,fontSize:10}}>{l}</span><Sel value={v} onChange={s} options={o} width={isCompact?100:130}/></div>))}</>}
+          <Btn small bg={C.purple} onClick={()=>fileRef.current?.click()} icon={Upload}>{isCompact?"":"Import"}</Btn>
         </div>
       </div>
 
-      {/* Content */}
-      <div style={{flex:1,overflow:"auto",padding:"20px 24px"}}>
-        <div style={{maxWidth:1400,margin:"0 auto",width:"100%"}}>{renderContent()}</div>
+      {/* Content — centered with max-width on large screens */}
+      <div style={{flex:1,overflow:"auto",padding:contentPad,display:"flex",justifyContent:"center"}}>
+        <div style={{width:"100%",maxWidth:maxContent}}>{renderContent()}</div>
       </div>
     </div>
   </div>);
