@@ -569,7 +569,9 @@ export default function App(){
       </div>
 
       {/* Content */}
-      <div style={{flex:1,overflow:"auto",padding:20}}>{renderContent()}</div>
+      <div style={{flex:1,overflow:"auto",padding:"20px 24px"}}>
+        <div style={{maxWidth:1400,margin:"0 auto",width:"100%"}}>{renderContent()}</div>
+      </div>
     </div>
   </div>);
 }
