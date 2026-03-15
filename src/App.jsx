@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import * as Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { ChevronRight, ChevronDown, BarChart3, Target, Users, Clock, Package, Calendar, Flame, ClipboardList, Table2, Edit3, RefreshCw, Home, Menu, X, Save, Trash2, Upload, Download, Eye, EyeOff, Settings } from "lucide-react";
+import { ChevronRight, ChevronDown, BarChart3, Target, Users, Clock, Package, Calendar, Flame, ClipboardList, Table2, Edit3, RefreshCw, Home, Menu, X, Save, Trash2, Upload, Download, Eye, EyeOff, Settings, Mail } from "lucide-react";
 
 const YEAR = 2026;
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -135,6 +135,132 @@ export default function App(){
   const [cnzProfileName,setCnzProfileName]=useState("");
   const cnzRef=useRef();
 
+  // ═══════════════════════════════════════════════════════
+  // EMAIL CLASSIFIER STATE
+  // ═══════════════════════════════════════════════════════
+  const EMAIL_CATS=["Order Creation","Stock Check","Stocktake","Cancel Order","Client Request","Inwards/Receipt","Dispatch Query","Returns","Compliance/H&S","Internal","Other"];
+  const DEFAULT_KEYWORDS={"order creation":["new order","order creation","purchase order","po #","create order","new po","order request"],
+    "stock check":["stock check","stock query","stock level","inventory check","stock count","how many","do we have","availability"],
+    "stocktake":["stocktake","stock take","cycle count","inventory count","physical count","annual count"],
+    "cancel order":["cancel","cancellation","cancel order","void order","delete order","remove order"],
+    "client request":["request","can you","could you","please","would like","need","require","asking for"],
+    "inwards/receipt":["inwards","receipt","receiving","container","inbound","delivery","arriving","shipment","asn"],
+    "dispatch query":["dispatch","shipping","tracking","freight","courier","pickup","collection","send out"],
+    "returns":["return","rma","send back","credit","damaged","faulty","wrong item"],
+    "compliance/h&s":["incident","near miss","accident","safety","hazard","audit","compliance","injury","mhe"],
+    "internal":["meeting","roster","shift","leave","training","toolbox","team"]};
+
+  const [emailRaw,setEmailRaw]=useState([]);
+  const [emailRows,setEmailRows]=useState([]);
+  const [emailFile,setEmailFile]=useState("");
+  const initMemory={learnedKeywords:{},categoryTimes:{"Order Creation":0.5,"Stock Check":0.25,"Stocktake":1.0,"Cancel Order":0.25,"Client Request":0.5,"Inwards/Receipt":0.5,"Dispatch Query":0.25,"Returns":0.5,"Compliance/H&S":0.5,"Internal":0.25,"Other":0.25},clientPatterns:{},history:[]};
+  const [emailMemory,setEmailMemory]=useState(()=>{try{const v=window._emailMem;if(v){const p=JSON.parse(v);return{...initMemory,...p};}return{...initMemory};}catch(e){return{...initMemory};}});
+  const mem=emailMemory||initMemory;
+  const [emailMonth,setEmailMonth]=useState(`${now.getFullYear()}-${pad(now.getMonth()+1)}`);
+  const emailRef=useRef();
+
+  const saveEmailMemory=(m)=>{setEmailMemory(m);window._emailMem=JSON.stringify(m);};
+
+  const classifyEmail=(subject,from,body)=>{
+    const text=(subject+" "+from+" "+(body||"")).toLowerCase();
+    for(const[kw,cat]of Object.entries(mem.learnedKeywords)){if(text.includes(kw.toLowerCase()))return cat;}
+    for(const[catKey,keywords]of Object.entries(DEFAULT_KEYWORDS)){
+      const catName=EMAIL_CATS.find(c=>c.toLowerCase()===catKey)||"Other";
+      for(const kw of keywords){if(text.includes(kw.toLowerCase()))return catName;}}
+    return"Other";
+  };
+
+  const getDefaultTime=(cat)=>mem.categoryTimes[cat]??0.25;
+
+  const detectClient=(from,subject)=>{
+    for(const[pattern,client]of Object.entries(mem.clientPatterns)){if(from.toLowerCase().includes(pattern.toLowerCase())||subject.toLowerCase().includes(pattern.toLowerCase()))return client;}
+    const match=from.match(/@([^.]+)/);
+    if(match)return match[1].charAt(0).toUpperCase()+match[1].slice(1);
+    return"Unknown";
+  };
+
+  const handleEmailCSV=useCallback((e)=>{
+    const file=e.target.files[0];if(!file)return;setEmailFile(file.name);
+    Papa.parse(file,{header:true,skipEmptyLines:true,complete:(r)=>{
+      const h=r.meta.fields||[];
+      const subjectCol=findCol(h,["Subject","subject","Title","title"])||h[0];
+      const fromCol=findCol(h,["From","from","Sender","sender","From: (Name)","From: (Address)"])||h.find(x=>x.toLowerCase().includes("from"));
+      const dateCol=findCol(h,["Received","Date","date","received","Sent","sent","Date/Time"])||h.find(x=>x.toLowerCase().includes("date"));
+      const bodyCol=findCol(h,["Body","body","Message","message","Content","content"]);
+
+      const rows=r.data.map((row,i)=>{
+        const subject=String(row[subjectCol]||"").trim();
+        const from=String(row[fromCol]||"").trim();
+        const date=String(row[dateCol]||"").trim();
+        const body=bodyCol?String(row[bodyCol]||"").trim():"";
+        if(!subject&&!from)return null;
+        const cat=classifyEmail(subject,from,body);
+        const client=detectClient(from,subject);
+        const time=getDefaultTime(cat);
+        return{id:i,subject,from,date,body:body.slice(0,200),category:cat,client,time,confirmed:false};
+      }).filter(Boolean);
+      setEmailRaw(r.data);setEmailRows(rows);
+    }});e.target.value="";
+  },[mem]);
+
+  const updateEmailRow=(id,field,value)=>{
+    setEmailRows(prev=>prev.map(r=>{
+      if(r.id!==id)return r;
+      const updated={...r,[field]:value,confirmed:true};
+      // When category changes, learn the keyword from subject
+      if(field==="category"){
+        const words=r.subject.toLowerCase().split(/\s+/).filter(w=>w.length>3);
+        if(words.length>0){
+          const keyPhrase=words.slice(0,3).join(" ");
+          const m2={...mem,learnedKeywords:{...mem.learnedKeywords,[keyPhrase]:value}};
+          saveEmailMemory(m2);
+        }
+        updated.time=getDefaultTime(value);
+      }
+      if(field==="time"){
+        const numTime=parseFloat(value)||0.25;
+        updated.time=numTime;
+        const m2={...mem,categoryTimes:{...mem.categoryTimes,[r.category]:numTime}};
+        saveEmailMemory(m2);
+      }
+      if(field==="client"&&r.from){
+        const match=r.from.match(/@([^.]+)/);
+        if(match){const m2={...mem,clientPatterns:{...mem.clientPatterns,[match[1]]:value}};saveEmailMemory(m2);}
+      }
+      return updated;
+    }));
+  };
+
+  const emailSummary=useMemo(()=>{
+    const cats={};let totalTime=0;const clients={};
+    emailRows.forEach(r=>{
+      if(!cats[r.category])cats[r.category]={count:0,time:0,items:[]};
+      cats[r.category].count++;cats[r.category].time+=r.time;cats[r.category].items.push(r);
+      totalTime+=r.time;
+      if(!clients[r.client])clients[r.client]={count:0,time:0};
+      clients[r.client].count++;clients[r.client].time+=r.time;
+    });
+    return{cats,totalTime,clients,totalEmails:emailRows.length};
+  },[emailRows]);
+
+  const exportEmailLog=()=>{
+    if(!emailRows.length)return;
+    const ws=XLSX.utils.json_to_sheet(emailRows.map(r=>({Date:r.date,From:r.from,Subject:r.subject,Category:r.category,Client:r.client,"Time (hrs)":r.time,Confirmed:r.confirmed?"Yes":"No"})));
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Email Log");
+    // Summary sheet
+    const sumData=Object.entries(emailSummary.cats).map(([cat,d])=>({Category:cat,Count:d.count,"Total Hours":Math.round(d.time*100)/100}));
+    sumData.push({Category:"TOTAL",Count:emailSummary.totalEmails,"Total Hours":Math.round(emailSummary.totalTime*100)/100});
+    const ws2=XLSX.utils.json_to_sheet(sumData);XLSX.utils.book_append_sheet(wb,ws2,"Summary");
+    XLSX.writeFile(wb,`Email_Log_${emailMonth}.xlsx`);
+  };
+
+  const confirmAllEmails=()=>{setEmailRows(prev=>prev.map(r=>({...r,confirmed:true})));
+    const timeByCat={};emailRows.forEach(r=>{if(!timeByCat[r.category])timeByCat[r.category]=[];timeByCat[r.category].push(r.time);});
+    const avgTimes={};for(const[cat,times]of Object.entries(timeByCat)){avgTimes[cat]=Math.round(times.reduce((a,b)=>a+b,0)/times.length*100)/100;}
+    const m2={...mem,categoryTimes:{...mem.categoryTimes,...avgTimes},history:[...mem.history,{month:emailMonth,total:emailSummary.totalEmails,hours:Math.round(emailSummary.totalTime*100)/100,date:new Date().toISOString()}]};
+    saveEmailMemory(m2);
+  };
+
   const saveProfile=(name)=>{if(!name.trim())return;const p={...cnzProfiles,[name.trim()]:{...cnzMap,_containerCol:cnzContainerCol}};setCnzProfiles(p);window._cnzProfiles=JSON.stringify(p);};
   const loadProfile=(name)=>{const p=cnzProfiles[name];if(!p)return;const m={...p};const cc=m._containerCol||"";delete m._containerCol;setCnzMap(m);setCnzContainerCol(cc);};
   const deleteProfile=(name)=>{const p={...cnzProfiles};delete p[name];setCnzProfiles(p);window._cnzProfiles=JSON.stringify(p);};
@@ -185,7 +311,7 @@ export default function App(){
   const masterStats=useMemo(()=>{const r={};let tA=0,tD=0,tN=0;CATEGORIES.forEach(cat=>{let cA=0,cD=0,cN=0;const mo={};for(let mi=0;mi<12;mi++){let a=0,d=0,n=0;Object.values(masterData[cat.id]?.[mi]||{}).forEach(v=>{v=+v;if(v===ST.DONE){d++;a++;}else if(v===ST.NOT_DONE){n++;a++;}else if(v===ST.NONE)a++;});mo[mi]={app:a,done:d,nd:n,pct:a?(d/a*100):0};cA+=a;cD+=d;cN+=n;}r[cat.id]={monthly:mo,app:cA,done:cD,nd:cN,pct:cA?(cD/cA*100):0};tA+=cA;tD+=cD;tN+=cN;});r._overall={app:tA,done:tD,nd:tN,pct:tA?(tD/tA*100):0};return r;},[masterData]);
 
   const applyKr2=()=>{try{const p=kr2StartStr.trim().split(/[\sT]/),dp=p[0].split("-"),tp=(p[1]||"00:00").split(":");setKr2Start(new Date(+dp[0],+dp[1]-1,+dp[2],+tp[0],+tp[1]||0));
-    const p2=kr2EndStr.trim().split(/[\sT]/),d2=p2[0].split("-"),t2=(p2[1]||"00:00").split(":");setKr2End(new Date(+d2[0],+d2[1]-1,+d2[2],+t2[0],+t2[1]||0));}catch{alert("Format: YYYY-MM-DD HH:MM");}};
+    const p2=kr2EndStr.trim().split(/[\sT]/),d2=p2[0].split("-"),t2=(p2[1]||"00:00").split(":");    setKr2End(new Date(+d2[0],+d2[1]-1,+d2[2],+t2[0],+t2[1]||0));}catch(e){alert("Format: YYYY-MM-DD HH:MM");}};
   const toggleMC=(cid,mi,k)=>{setMasterData(p=>{const n=JSON.parse(JSON.stringify(p));n[cid][mi][k]=(+(n[cid]?.[mi]?.[k]??0)+1)%5;return n;});};
   const bulkSet=(cid,mi,st,ct)=>{setMasterData(p=>{const n=JSON.parse(JSON.stringify(p));if(ct==="daily"){for(let d=1;d<=daysInMonth(mi);d++)if(!isWeekend(mi,d))n[cid][mi][d]=st;}else{for(let w=1;w<=5;w++)n[cid][mi][w]=st;}return n;});};
 
@@ -210,9 +336,9 @@ export default function App(){
     {title:"Home",items:[{id:"home",label:"Overview",icon:Home}]},
     {title:"KR2 Dashboard",items:[{id:"dashboard",label:"Dashboard",icon:BarChart3},{id:"kr2detail",label:"KR2 Detail",icon:Target},{id:"team",label:"Team",icon:Users},{id:"picktime",label:"Times",icon:Clock},{id:"clients",label:"Clients",icon:Package},{id:"daily",label:"Daily",icon:Calendar},{id:"velocity",label:"Fast Movers",icon:Flame}]},
     {title:"KR2 Master",items:[{id:"master_overview",label:"Compliance",icon:ClipboardList},{id:"master_table",label:"Score Table",icon:Table2},{id:"master_detail",label:"Edit Grid",icon:Edit3}]},
-    {title:"Tools",items:[{id:"cnz_mapper",label:"CNZ Mapper",icon:RefreshCw}]},
+    {title:"Tools",items:[{id:"cnz_mapper",label:"CNZ Mapper",icon:RefreshCw},{id:"email_classifier",label:"Email Classifier",icon:Mail}]},
   ];
-  const isKpi=!tab.startsWith("master_")&&tab!=="cnz_mapper"&&tab!=="home";
+  const isKpi=!tab.startsWith("master_")&&tab!=="cnz_mapper"&&tab!=="home"&&tab!=="email_classifier";
   const showFilters=isKpi&&!["dashboard","kr2detail"].includes(tab)&&orders.length>0;
 
   const KR2Window=()=>(<div style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 18px",marginBottom:12,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
@@ -524,7 +650,154 @@ export default function App(){
     </div>);};
 
   // ═══════════════════════════════════════════════════════
-  // ROUTER
+  // EMAIL CLASSIFIER VIEW
+  // ═══════════════════════════════════════════════════════
+  const renderEmailClassifier=()=>{
+    const catColors={"Order Creation":C.blue,"Stock Check":C.purple,"Stocktake":C.yellow,"Cancel Order":C.red,"Client Request":C.green,
+      "Inwards/Receipt":C.orange,"Dispatch Query":"#06b6d4","Returns":C.pink,"Compliance/H&S":"#f43f5e","Internal":C.text3,"Other":"#64748b"};
+    const fmtTime=(h)=>{const hrs=Math.floor(h);const mins=Math.round((h-hrs)*60);return hrs>0?`${hrs}h ${mins}m`:`${mins}m`;};
+    const learnedCount=Object.keys(mem.learnedKeywords).length;
+    const historyCount=mem.history.length;
+
+    return(<div>
+      <SectionHeader icon={Mail} title="Email Classifier" sub="Upload Outlook export → auto-classify → track time"/>
+
+      {/* Top: Upload + Memory Status */}
+      <div style={{display:"grid",gridTemplateColumns:isCompact?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
+        <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px"}}>
+          <div style={{color:C.text2,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Upload Outlook Export</div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+            <Btn bg="#e94560" onClick={()=>emailRef.current?.click()} icon={Upload}>Browse CSV</Btn>
+            <input ref={emailRef} type="file" accept=".csv" onChange={handleEmailCSV} style={{display:"none"}}/>
+            <span style={{color:emailFile?C.text:C.text3,fontSize:12}}>{emailFile||"No file selected"}</span>
+          </div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <span style={{color:C.text3,fontSize:11}}>Month:</span>
+            <input value={emailMonth} onChange={e=>setEmailMonth(e.target.value)} style={{background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:6,padding:"5px 10px",fontSize:12,width:120}} placeholder="YYYY-MM"/>
+          </div>
+          {emailRows.length>0&&<div style={{color:C.text2,fontSize:11,marginTop:8}}>{emailRows.length} emails loaded · {emailRows.filter(r=>r.confirmed).length} confirmed</div>}
+        </div>
+
+        <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px"}}>
+          <div style={{color:C.text2,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Memory & Learning</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div style={{background:C.bg2,borderRadius:8,padding:"10px 12px",textAlign:"center"}}><div style={{color:C.blue,fontSize:22,fontWeight:800}}>{learnedCount}</div><div style={{color:C.text3,fontSize:9}}>Learned Keywords</div></div>
+            <div style={{background:C.bg2,borderRadius:8,padding:"10px 12px",textAlign:"center"}}><div style={{color:C.green,fontSize:22,fontWeight:800}}>{Object.keys(emailMemory.clientPatterns).length}</div><div style={{color:C.text3,fontSize:9}}>Client Patterns</div></div>
+            <div style={{background:C.bg2,borderRadius:8,padding:"10px 12px",textAlign:"center"}}><div style={{color:C.purple,fontSize:22,fontWeight:800}}>{historyCount}</div><div style={{color:C.text3,fontSize:9}}>Months Logged</div></div>
+          </div>
+          <div style={{display:"flex",gap:6,marginTop:10}}>
+            <Btn small bg="#2a2a3e" onClick={()=>{if(confirm("Reset all learned patterns?"))saveEmailMemory({...mem,learnedKeywords:{},clientPatterns:{}});}}>Reset Keywords</Btn>
+            <Btn small bg="#2a2a3e" onClick={()=>{if(confirm("Reset ALL memory?"))saveEmailMemory({...initMemory});}}>Reset All</Btn>
+          </div>
+          {historyCount>0&&<div style={{marginTop:8}}>
+            <div style={{color:C.text3,fontSize:10}}>Previous months: {mem.history.map(h=>`${h.month} (${h.total} emails, ${h.hours}h)`).join(" · ")}</div></div>}
+        </div>
+      </div>
+
+      {emailRows.length>0&&<>
+        {/* Summary Cards */}
+        <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+          <Card title="Total Emails" value={emailSummary.totalEmails} color={C.blue} icon="📧"/>
+          <Card title="Total Time" value={fmtTime(emailSummary.totalTime)} sub={`${emailSummary.totalTime.toFixed(2)} hours`} color={C.yellow} icon="⏱"/>
+          <Card title="Categories" value={Object.keys(emailSummary.cats).length} color={C.purple} icon="📂"/>
+          <Card title="Clients" value={Object.keys(emailSummary.clients).length} color={C.green} icon="👥"/>
+        </div>
+
+        {/* Category Breakdown */}
+        <div style={{display:"grid",gridTemplateColumns:isCompact?"1fr":"2fr 1fr",gap:10,marginBottom:12}}>
+          <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px"}}>
+            <div style={{color:C.text2,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Category Breakdown</div>
+            {Object.entries(emailSummary.cats).sort((a,b)=>b[1].count-a[1].count).map(([cat,d])=>(
+              <div key={cat} style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+                <div style={{width:10,height:10,borderRadius:3,background:catColors[cat]||C.text3,flexShrink:0}}/>
+                <span style={{color:C.text,fontSize:12,fontWeight:600,width:140}}>{cat}</span>
+                <div style={{flex:1,background:C.bg,height:18,borderRadius:4,overflow:"hidden"}}>
+                  <div style={{background:catColors[cat]||C.text3,height:"100%",width:`${Math.max(d.count/emailSummary.totalEmails*100,2)}%`,borderRadius:4}}/></div>
+                <span style={{color:C.text,fontSize:12,fontWeight:700,width:30,textAlign:"right"}}>{d.count}</span>
+                <span style={{color:C.yellow,fontSize:11,fontWeight:600,width:50,textAlign:"right"}}>{fmtTime(d.time)}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px"}}>
+            <div style={{color:C.text2,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>By Client</div>
+            {Object.entries(emailSummary.clients).sort((a,b)=>b[1].count-a[1].count).map(([client,d])=>(
+              <div key={client} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:`1px solid ${C.border}22`}}>
+                <span style={{color:C.text,fontSize:12}}>{client}</span>
+                <div style={{display:"flex",gap:8}}><span style={{color:C.text2,fontSize:11}}>{d.count} emails</span><span style={{color:C.yellow,fontSize:11,fontWeight:600}}>{fmtTime(d.time)}</span></div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div style={{display:"flex",gap:8,marginBottom:12}}>
+          <Btn bg={C.green} onClick={confirmAllEmails} icon={Save}>Confirm All & Save to Memory</Btn>
+          <Btn bg={C.purple} onClick={exportEmailLog} icon={Download}>Export Log (.xlsx)</Btn>
+        </div>
+
+        {/* Email Table */}
+        <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:10,overflow:"auto",maxHeight:500}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+            <thead><tr>
+              {["Date","From","Subject","Category","Client","Time (hrs)",""].map((h,i)=>(
+                <th key={i} style={{background:C.bg2,color:C.text2,padding:"10px 12px",textAlign:"left",fontWeight:700,fontSize:10,borderBottom:`1px solid ${C.border}`,whiteSpace:"nowrap",position:"sticky",top:0,zIndex:1}}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>{emailRows.map((r,ri)=>(
+              <tr key={r.id} style={{background:ri%2?C.rowAlt:C.bg3,borderLeft:r.confirmed?`3px solid ${C.green}`:`3px solid transparent`}}>
+                <td style={{padding:"8px 12px",color:C.text3,whiteSpace:"nowrap",fontSize:10}}>{r.date}</td>
+                <td style={{padding:"8px 12px",color:C.text2,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.from}</td>
+                <td style={{padding:"8px 12px",color:C.text,maxWidth:250,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.subject}>{r.subject}</td>
+                <td style={{padding:"8px 6px"}}><select value={r.category} onChange={e=>updateEmailRow(r.id,"category",e.target.value)}
+                  style={{background:C.bg2,color:catColors[r.category]||C.text,border:`1px solid ${C.border}`,borderRadius:4,padding:"4px 6px",fontSize:11,fontWeight:600,width:130}}>
+                  {EMAIL_CATS.map(c=><option key={c} value={c}>{c}</option>)}</select></td>
+                <td style={{padding:"8px 6px"}}><input value={r.client} onChange={e=>updateEmailRow(r.id,"client",e.target.value)}
+                  style={{background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:4,padding:"4px 6px",fontSize:11,width:100}}/></td>
+                <td style={{padding:"8px 6px"}}><input type="number" step="0.25" min="0" value={r.time} onChange={e=>updateEmailRow(r.id,"time",parseFloat(e.target.value)||0)}
+                  style={{background:C.bg2,color:C.yellow,border:`1px solid ${C.border}`,borderRadius:4,padding:"4px 6px",fontSize:11,fontWeight:700,width:60,textAlign:"center"}}/></td>
+                <td style={{padding:"8px 6px"}}>{r.confirmed&&<span style={{color:C.green,fontSize:12}}>✓</span>}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+
+        {/* Default Times Editor */}
+        <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px",marginTop:12}}>
+          <div style={{color:C.text2,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Default Times per Category <span style={{fontWeight:400,textTransform:"none"}}>(auto-applied on next upload)</span></div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {EMAIL_CATS.map(cat=>(
+              <div key={cat} style={{background:C.bg2,borderRadius:6,padding:"6px 10px",display:"flex",alignItems:"center",gap:6}}>
+                <div style={{width:8,height:8,borderRadius:2,background:catColors[cat]||C.text3}}/>
+                <span style={{color:C.text2,fontSize:11}}>{cat}</span>
+                <input type="number" step="0.25" min="0" value={mem.categoryTimes[cat]??0.25}
+                  onChange={e=>{const m2={...mem,categoryTimes:{...mem.categoryTimes,[cat]:parseFloat(e.target.value)||0.25}};saveEmailMemory(m2);}}
+                  style={{background:C.bg,color:C.yellow,border:`1px solid ${C.border}`,borderRadius:4,padding:"2px 4px",fontSize:11,fontWeight:700,width:45,textAlign:"center"}}/>
+                <span style={{color:C.text3,fontSize:9}}>hrs</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>}
+
+      {!emailRows.length&&!emailFile&&<div style={{textAlign:"center",padding:50,color:C.text3}}>
+        <Mail size={40} color={C.text3} style={{opacity:0.2,marginBottom:12}}/>
+        <div style={{fontSize:15,color:C.text2,marginBottom:6}}>How it works</div>
+        <div style={{fontSize:12,lineHeight:1.8,maxWidth:500,margin:"0 auto",textAlign:"left"}}>
+          <span style={{color:C.blue,fontWeight:700}}>1.</span> Export your Outlook inbox to CSV (File → Open & Export → Import/Export)<br/>
+          <span style={{color:C.blue,fontWeight:700}}>2.</span> Upload the CSV here — emails auto-classify by subject keywords<br/>
+          <span style={{color:C.blue,fontWeight:700}}>3.</span> Adjust any wrong categories and set time spent per email<br/>
+          <span style={{color:C.blue,fontWeight:700}}>4.</span> Click "Confirm All" — the app <span style={{color:C.green,fontWeight:600}}>learns your corrections</span><br/>
+          <span style={{color:C.blue,fontWeight:700}}>5.</span> Next month, upload again — it remembers your categories and times<br/>
+          <span style={{color:C.blue,fontWeight:700}}>6.</span> Export the monthly log as Excel for your records
+        </div>
+        {learnedCount>0&&<div style={{marginTop:16,padding:"10px 16px",background:C.bg3,border:`1px solid ${C.border}`,borderRadius:8,display:"inline-block"}}>
+          <span style={{color:C.green,fontSize:12}}>🧠 Memory active: {learnedCount} learned keywords · {Object.keys(mem.clientPatterns).length} client patterns</span></div>}
+      </div>}
+    </div>);
+  };
+
+  // ═══════════════════════════════════════════════════════
+  // CONTENT ROUTER
   // ═══════════════════════════════════════════════════════
   const renderContent=()=>{
     if(!orders.length&&isKpi&&tab!=="dashboard")return renderHome();
@@ -533,7 +806,7 @@ export default function App(){
       case"kr2detail":return renderKr2Detail();case"team":return renderTeam();case"picktime":return renderTimes();
       case"clients":return renderClients();case"daily":return renderDaily();case"velocity":return renderVelocity();
       case"master_overview":return renderMasterOverview();case"master_table":return renderMasterTable();case"master_detail":return renderMasterDetail();
-      case"cnz_mapper":return renderCnzMapper();default:return renderHome();}};
+      case"cnz_mapper":return renderCnzMapper();case"email_classifier":return renderEmailClassifier();default:return renderHome();}};
 
   // ═══════════════════════════════════════════════════════
   // LAYOUT
