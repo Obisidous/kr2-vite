@@ -8,6 +8,25 @@ const C = { bg:"#0f0f1a", bg2:"#161625", bg3:"#1c1c30", bg4:"#222238", border:"#
 const pad=n=>String(n).padStart(2,"0");
 function findCol(h,a){const l=h.map(x=>x.toLowerCase().replace(/[\s_]/g,""));for(const x of a){const la=x.toLowerCase().replace(/[\s_]/g,"");const i=l.indexOf(la);if(i>=0)return h[i];}for(const x of a){const la=x.toLowerCase().replace(/[\s_]/g,"");for(let i=0;i<l.length;i++)if(l[i].includes(la))return h[i];}return null;}
 
+function parseMSG(buf){
+  try{
+    const cfb=XLSX.CFB.read(buf,{type:"array"});
+    const getStr=(pid)=>{for(const tp of["001F","001E"]){const nm="/__substg1.0_"+pid+tp;const e=XLSX.CFB.find(cfb,nm);if(e&&e.content&&e.content.length){
+      if(tp==="001F"){let s="";const b=e.content;for(let i=0;i<b.length-1;i+=2)s+=String.fromCharCode(b[i]|(b[i+1]<<8));return s.replace(/\0+$/,"");}
+      else{let s="";const b=e.content;for(let i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);return s.replace(/\0+$/,"");}}}return"";};
+    const subject=getStr("0037"),senderName=getStr("0C1A"),senderEmail=getStr("0C1F")||getStr("0065")||getStr("5D01"),body=getStr("1000");
+    let date="";
+    const pe=XLSX.CFB.find(cfb,"/__properties_version1.0");
+    if(pe&&pe.content){const b=pe.content;const hs=32;
+      for(let o=hs;o+16<=b.length;o+=16){const pt=b[o]|(b[o+1]<<8),pi=b[o+2]|(b[o+3]<<8);
+        if((pi===0x0039||pi===0x0E06)&&pt===0x0040){try{const lo=BigInt(b[o+8]|(b[o+9]<<8)|(b[o+10]<<16)|((b[o+11]<<24)>>>0)),hi=BigInt(b[o+12]|(b[o+13]<<8)|(b[o+14]<<16)|((b[o+15]<<24)>>>0));
+          const ft=hi*BigInt(0x100000000)+lo,ms=Number((ft-BigInt("116444736000000000"))/BigInt(10000));
+          if(ms>0&&ms<Date.now()+86400000){const d=new Date(ms);date=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;break;}}catch(e){}}}}
+    const from=senderEmail?`${senderName} <${senderEmail}>`:senderName;
+    return{subject,from,date,body:body.slice(0,500)};
+  }catch(e){console.error("MSG parse:",e);return null;}
+}
+
 const CNZ_FIELDS={container_id:{col:0,label:"Container / Reference ID",desc:"Container number or shipment reference",kw:["container","shipment","consignment","booking","reference","ref","bill of lading","bol","bl","delivery","po number","purchase order","asn","receipt","inbound","tracking"],fromFilename:true},material:{col:4,label:"Material / SKU Code",desc:"Product code, material number, or SKU",kw:["material","sku","product","item code","article","part number","part no","upc","ean","barcode","product code","item number","item no","stock code","catalog","gtin"]},quantity:{col:5,label:"Quantity (EA)",desc:"Total quantity in eaches",kw:["actual delivery qty","quantity","qty","units","total qty","ship qty","shipped","received","ea qty","each","pieces","pcs","count","delivery qty","order qty","actual qty"]},batch:{col:6,label:"Batch / Lot Number",desc:"Batch, lot, or vintage code",kw:["batch","lot","lot number","lot no","vintage","batch number","batch no","lot code","production batch","expiry","best before","bbe"]}};
 const CNZ_STATIC=[{col:9,label:"Location",value:"DOCK"},{col:18,label:"System Set",value:"SYSTEMSET"},{col:20,label:"Pallet Type",value:"CHEP PALLET"},{col:25,label:"Create Multiple MUs",value:"CreateMultipleMUs:TRUE"}];
 const CNZ_TOTAL=26;
@@ -60,9 +79,24 @@ export default function App(){
   const masterSearch=useMemo(()=>{if(!skuSearch||!skuClients[skuActive])return[];const q=skuSearch.toLowerCase();return skuClients[skuActive].skus.filter(m=>m.sku.toLowerCase().includes(q)||m.desc.toLowerCase().includes(q)||m.upc.toLowerCase().includes(q)).slice(0,50);},[skuSearch,skuActive,skuClients]);
   const exportSku=()=>{if(!skuInwards.length)return;const ws=XLSX.utils.json_to_sheet(skuInwards.map(r=>({SKU:r.sku,Status:r.status,Description:r.desc,UOM:r.uom,UPC:r.upc,TrackBy:r.trackby,TrackByRequired:r.trackbyReq})));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"SKU Check");const nc=skuInwards.filter(r=>r.status==="Needs Creating");if(nc.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(nc.map(r=>({SKU:r.sku}))),"Needs Creating");XLSX.writeFile(wb,`SKU_Check_${skuActive}_${new Date().toISOString().slice(0,10)}.xlsx`);};
 
-  const handleEmailCSV=useCallback((e)=>{const file=e.target.files[0];if(!file)return;setEmailFile(file.name);
-    Papa.parse(file,{header:true,skipEmptyLines:true,complete:(r)=>{const h=r.meta.fields||[];const sc=findCol(h,["Subject","subject","Title"])||h[0],fc=findCol(h,["From","from","Sender"])||h.find(x=>x.toLowerCase().includes("from")),dc=findCol(h,["Received","Date","date","Sent"])||h.find(x=>x.toLowerCase().includes("date")),bc=findCol(h,["Body","body","Message","Content"]);
-      setEmailRows(r.data.map((row,i)=>{const s=String(row[sc]||"").trim(),f=String(row[fc]||"").trim(),d=String(row[dc]||"").trim(),b=bc?String(row[bc]||"").trim():"";if(!s&&!f)return null;const cat=classify(s,f,b);return{id:i,subject:s,from:f,date:d,body:b.slice(0,200),category:cat,client:detectClient(f,s),time:defTime(cat),confirmed:false};}).filter(Boolean));}});e.target.value="";},[mem]);
+  const [emailLoading,setEmailLoading]=useState(false);
+  const handleEmailFiles=useCallback((e)=>{const files=Array.from(e.target.files);if(!files.length)return;
+    const msgFiles=files.filter(f=>f.name.toLowerCase().endsWith(".msg"));
+    const csvFile=files.find(f=>f.name.toLowerCase().endsWith(".csv"));
+    // CSV path
+    if(csvFile&&!msgFiles.length){setEmailFile(csvFile.name);
+      Papa.parse(csvFile,{header:true,skipEmptyLines:true,complete:(r)=>{const h=r.meta.fields||[];const sc=findCol(h,["Subject","subject","Title"])||h[0],fc=findCol(h,["From","from","Sender"])||h.find(x=>x.toLowerCase().includes("from")),dc=findCol(h,["Received","Date","date","Sent"])||h.find(x=>x.toLowerCase().includes("date")),bc=findCol(h,["Body","body","Message","Content"]);
+        setEmailRows(r.data.map((row,i)=>{const s=String(row[sc]||"").trim(),f=String(row[fc]||"").trim(),d=String(row[dc]||"").trim(),b=bc?String(row[bc]||"").trim():"";if(!s&&!f)return null;const cat=classify(s,f,b);return{id:i,subject:s,from:f,date:d,body:b.slice(0,200),category:cat,client:detectClient(f,s),time:defTime(cat),confirmed:false};}).filter(Boolean));}});e.target.value="";return;}
+    // MSG path
+    if(msgFiles.length){setEmailFile(`${msgFiles.length} .msg files`);setEmailLoading(true);
+      const results=[];let done=0;
+      msgFiles.forEach((file,idx)=>{const reader=new FileReader();reader.onload=(ev)=>{
+        const parsed=parseMSG(new Uint8Array(ev.target.result));
+        if(parsed&&(parsed.subject||parsed.from)){const cat=classify(parsed.subject,parsed.from,parsed.body);
+          results.push({id:idx,subject:parsed.subject,from:parsed.from,date:parsed.date,body:(parsed.body||"").slice(0,200),category:cat,client:detectClient(parsed.from,parsed.subject),time:defTime(cat),confirmed:false});}
+        done++;if(done===msgFiles.length){results.sort((a,b)=>(a.date||"").localeCompare(b.date||""));results.forEach((r,i)=>r.id=i);setEmailRows(results);setEmailLoading(false);}
+      };reader.readAsArrayBuffer(file);});e.target.value="";return;}
+    e.target.value="";},[mem]);
   const updateEmail=(id,field,val)=>{setEmailRows(prev=>prev.map(r=>{if(r.id!==id)return r;const u={...r,[field]:val,confirmed:true};if(field==="category"){const w=r.subject.toLowerCase().split(/\s+/).filter(w=>w.length>3);if(w.length)saveMem({...mem,learnedKeywords:{...mem.learnedKeywords,[w.slice(0,3).join(" ")]:val}});u.time=defTime(val);}if(field==="time"){u.time=parseFloat(val)||0.25;saveMem({...mem,categoryTimes:{...mem.categoryTimes,[r.category]:u.time}});}if(field==="client"&&r.from){const m=r.from.match(/@([^.]+)/);if(m)saveMem({...mem,clientPatterns:{...mem.clientPatterns,[m[1]]:val}});}return u;}));};
   const emailSum=useMemo(()=>{const cats={};let tt=0;const cls={};emailRows.forEach(r=>{if(!cats[r.category])cats[r.category]={count:0,time:0};cats[r.category].count++;cats[r.category].time+=r.time;tt+=r.time;if(!cls[r.client])cls[r.client]={count:0,time:0};cls[r.client].count++;cls[r.client].time+=r.time;});return{cats,totalTime:tt,clients:cls,total:emailRows.length};},[emailRows]);
   const exportEmail=()=>{if(!emailRows.length)return;const ws=XLSX.utils.json_to_sheet(emailRows.map(r=>({Date:r.date,From:r.from,Subject:r.subject,Category:r.category,Client:r.client,"Time (hrs)":r.time})));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Log");const sd=Object.entries(emailSum.cats).map(([c,d])=>({Category:c,Count:d.count,Hours:Math.round(d.time*100)/100}));sd.push({Category:"TOTAL",Count:emailSum.total,Hours:Math.round(emailSum.totalTime*100)/100});XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(sd),"Summary");XLSX.writeFile(wb,`Email_Log_${emailMonth}.xlsx`);};
@@ -173,10 +207,10 @@ export default function App(){
       {!cnzSrc&&<div style={{textAlign:"center",padding:50,color:C.text3}}><RefreshCw size={40} color={C.text3} style={{opacity:0.4,marginBottom:12}}/><div style={{fontSize:14}}>Upload Excel or CSV to begin</div></div>}</div>);};
 
   const renderEmailClassifier=()=>{const ec={"Order Creation":C.blue,"Stock Check":C.purple,"Stocktake":C.yellow,"Cancel Order":C.red,"Client Request":C.green,"Inwards/Receipt":C.orange,"Dispatch Query":C.cyan,"Returns":C.pink,"Compliance/H&S":"#f43f5e","Internal":C.text3,"Other":"#64748b"};const ft=(h)=>{const hrs=Math.floor(h),mins=Math.round((h-hrs)*60);return hrs>0?`${hrs}h ${mins}m`:`${mins}m`;};const lc=Object.keys(mem.learnedKeywords).length;
-    return(<div><SH icon={Mail} title="Email Classifier" sub="Upload Outlook export → classify → track time"/>
+    return(<div><SH icon={Mail} title="Email Classifier" sub="Upload .msg files or CSV → classify → track time"/>
       <div style={{display:"grid",gridTemplateColumns:isC?"1fr":"1fr 1fr",gap:10,marginBottom:12}}>
-        <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px"}}><div style={{color:C.text2,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Upload</div>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><Btn bg="#e94560" onClick={()=>emailRef.current?.click()} icon={Upload}>Browse CSV</Btn><input ref={emailRef} type="file" accept=".csv" onChange={handleEmailCSV} style={{display:"none"}}/><span style={{color:emailFile?C.text:C.text3,fontSize:12}}>{emailFile||"No file"}</span></div>
+        <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px"}}><div style={{color:C.text2,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Upload (.msg or .csv)</div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><Btn bg="#e94560" onClick={()=>emailRef.current?.click()} icon={Upload}>Browse Files</Btn><input ref={emailRef} type="file" accept=".csv,.msg" multiple onChange={handleEmailFiles} style={{display:"none"}}/><span style={{color:emailFile?C.text:C.text3,fontSize:12}}>{emailLoading?"Parsing...":emailFile||"No file"}</span></div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}><span style={{color:C.text3,fontSize:11}}>Month:</span><input value={emailMonth} onChange={e=>setEmailMonth(e.target.value)} style={{background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:6,padding:"5px 10px",fontSize:12,width:120}}/></div></div>
         <div style={{background:C.bg3,border:`1px solid ${C.border}`,borderRadius:10,padding:"16px 20px"}}><div style={{color:C.text2,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Memory</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}><div style={{background:C.bg2,borderRadius:8,padding:"10px 12px",textAlign:"center"}}><div style={{color:C.blue,fontSize:22,fontWeight:800}}>{lc}</div><div style={{color:C.text3,fontSize:9}}>Keywords</div></div><div style={{background:C.bg2,borderRadius:8,padding:"10px 12px",textAlign:"center"}}><div style={{color:C.green,fontSize:22,fontWeight:800}}>{Object.keys(mem.clientPatterns).length}</div><div style={{color:C.text3,fontSize:9}}>Clients</div></div><div style={{background:C.bg2,borderRadius:8,padding:"10px 12px",textAlign:"center"}}><div style={{color:C.purple,fontSize:22,fontWeight:800}}>{mem.history.length}</div><div style={{color:C.text3,fontSize:9}}>Months</div></div></div>
@@ -196,7 +230,13 @@ export default function App(){
             <td style={{padding:"8px 6px"}}><input value={r.client} onChange={e=>updateEmail(r.id,"client",e.target.value)} style={{background:C.bg2,color:C.text,border:`1px solid ${C.border}`,borderRadius:4,padding:"4px 6px",fontSize:11,width:100}}/></td>
             <td style={{padding:"8px 6px"}}><input type="number" step="0.25" min="0" value={r.time} onChange={e=>updateEmail(r.id,"time",parseFloat(e.target.value)||0)} style={{background:C.bg2,color:C.yellow,border:`1px solid ${C.border}`,borderRadius:4,padding:"4px 6px",fontSize:11,fontWeight:700,width:60,textAlign:"center"}}/></td>
             <td style={{padding:"8px 6px"}}>{r.confirmed&&<span style={{color:C.green}}>✓</span>}</td></tr>))}</tbody></table></div></>}
-      {!emailRows.length&&<div style={{textAlign:"center",padding:50,color:C.text3}}><Mail size={40} color={C.text3} style={{opacity:0.2,marginBottom:12}}/><div style={{fontSize:14,color:C.text2}}>Upload Outlook CSV to classify</div></div>}</div>);};
+      {!emailRows.length&&<div style={{textAlign:"center",padding:50,color:C.text3}}><Mail size={40} color={C.text3} style={{opacity:0.2,marginBottom:12}}/><div style={{fontSize:15,color:C.text2,marginBottom:6}}>How to import emails</div>
+        <div style={{fontSize:12,lineHeight:1.8,maxWidth:520,margin:"0 auto",textAlign:"left"}}>
+          <div style={{color:C.cyan,fontWeight:700,marginBottom:4}}>Option 1: Drag .msg files (easiest)</div>
+          <span style={{color:C.text3}}>In Outlook → select emails for the month → drag to a desktop folder → upload all .msg files here</span><br/><br/>
+          <div style={{color:C.cyan,fontWeight:700,marginBottom:4}}>Option 2: CSV export</div>
+          <span style={{color:C.text3}}>File → Open & Export → Import/Export → Export to File → CSV → pick folder & date range</span>
+        </div></div>}</div>);};
 
   const renderContent=()=>{switch(tab){case"home":return renderHome();case"cnz_mapper":return renderCnzMapper();case"email_classifier":return renderEmailClassifier();case"sku_checker":return renderSkuChecker();default:return renderHome();}};
 
